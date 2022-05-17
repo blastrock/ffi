@@ -557,6 +557,17 @@ async_cb_event(void* unused)
         }
     }
 
+    // Flush all the callbacks that we will never run
+    lock();
+    for (cb : async_cb_list) {
+        pthread_mutex_lock(&cb->async_mutex);
+        cb->done = true;
+        pthread_cond_signal(&cb->async_cond);
+        pthread_mutex_unlock(&cb->async_mutex);
+    }
+    unlock();
+
+
     return Qnil;
 }
 
