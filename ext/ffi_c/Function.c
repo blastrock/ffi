@@ -488,6 +488,11 @@ callback_invoke(ffi_cif* cif, void* retval, void** parameters, void* user_data)
 
         /* Now signal the async callback thread */
         pthread_mutex_lock(&async_cb_mutex);
+        if (async_wait_handle.stop) {
+            // TODO free memory
+            return;
+        }
+
         empty = async_cb_list == NULL;
         cb.next = async_cb_list;
         async_cb_list = &cb;
@@ -509,6 +514,7 @@ callback_invoke(ffi_cif* cif, void* retval, void** parameters, void* user_data)
         bool empty = false;
 
         cb.async_event = CreateEvent(NULL, FALSE, FALSE, NULL);
+        // TODO do the same
 
         /* Now signal the async callback thread */
         EnterCriticalSection(&async_cb_lock);
@@ -532,20 +538,20 @@ struct async_wait {
     bool stop;
 };
 
+struct async_wait async_wait_handle = { 0 };
+
 static void * async_cb_wait(void *);
 static void async_cb_stop(void *);
 
 static VALUE
 async_cb_event(void* unused)
 {
-    struct async_wait w = { 0 };
-
-    w.stop = false;
-    while (!w.stop) {
-        rb_thread_call_without_gvl(async_cb_wait, &w, async_cb_stop, &w);
-        if (w.cb != NULL) {
+    async_wait_handle.stop = false;
+    while (!async_wait_handle.stop) {
+        rb_thread_call_without_gvl(async_cb_wait, &async_wait_handle, async_cb_stop, &async_wait_handle);
+        if (async_wait_handle.cb != NULL) {
             /* Start up a new ruby thread to run the ruby callback */
-            VALUE new_thread = rb_thread_create(async_cb_call, w.cb);
+            VALUE new_thread = rb_thread_create(async_cb_call, async_wait_handle.cb);
             /* Name thread, for better debugging */
             rb_funcall(new_thread, rb_intern("name="), 1, rb_str_new2("FFI Callback Runner"));
         }
